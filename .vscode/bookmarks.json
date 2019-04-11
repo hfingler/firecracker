@@ -1,0 +1,77 @@
+[
+	{
+		"path": "$ROOTPATH$/vmm/src/lib.rs",
+		"bookmarks": [
+			{
+				"line": 894,
+				"column": 78,
+				"label": ""
+			},
+			{
+				"line": 1115,
+				"column": 87,
+				"label": ""
+			},
+			{
+				"line": 1171,
+				"column": 0,
+				"label": ""
+			},
+			{
+				"line": 1177,
+				"column": 81,
+				"label": ""
+			},
+			{
+				"line": 1728,
+				"column": 23,
+				"label": ""
+			}
+		]
+	},
+	{
+		"path": "$ROOTPATH$/vmm/src/vstate.rs",
+		"bookmarks": [
+			{
+				"line": 91,
+				"column": 9,
+				"label": ""
+			}
+		]
+	},
+	{
+		"path": "$ROOTPATH$/arch/src/x86_64/mod.rs",
+		"bookmarks": [
+			{
+				"line": 53,
+				"column": 85,
+				"label": ""
+			},
+			{
+				"line": 146,
+				"column": 50,
+				"label": ""
+			}
+		]
+	},
+	{
+		"path": "$ROOTPATH$/vmm/src/vmm_config/net.rs",
+		"bookmarks": [
+			{
+				"line": 114,
+				"column": 30,
+				"label": ""
+			}
+		]
+	},
+	{
+		"path": "$ROOTPATH$/memory_model/src/guest_memory.rs",
+		"bookmarks": [
+			{
+				"line": 281,
+				"column": 39,
+				"label": ""
+			}
+		]
+	}
+]
