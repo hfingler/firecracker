@@ -86,7 +86,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 pub fn is_multiboot<F>(
     kernel_image: &mut F
-) -> Result<u32>
+) -> Result<bool>
 where
     F: Read + Seek,
 {
@@ -111,12 +111,13 @@ where
 
             if mb_flags as i32 + mb_check as i32 + multiboot::MULTIBOOT_BOOTLOADER_MAGIC as i32 == 0 {
                 println!("it matches!");
-                return Ok((i*4) as u32);
+                return Ok(true);
+                //return Ok((i*4) as u32);
             }
         }
     }
 
-    return Err(Error::NotMultibootKernel);
+    return Ok(false);
 }  
 
 pub fn page_align_4k(addr: u32) -> u32
@@ -149,6 +150,7 @@ where
     let mut cmd_addr = None;
 
     if let Ok(mb_magic_offset) = is_multiboot(kernel_image) {
+        /*
         let kernel_file_size = kernel_image
             .seek(SeekFrom::End(0))
             //.unwrap()
@@ -214,17 +216,18 @@ where
         guest_mem.read_to_memory(zero_start_addr, &mut zeroes, zeroes_sz)
             .map_err(|_| Error::SeekKernelImage)?; 
 
-        cmd_addr_u32 = page_align_4k(mb_kernel_size);
-        cmd_addr = GuestAddress(cmd_addr_u32);
+        let cmd_addr_u32 = page_align_4k(mb_kernel_size);
+        cmd_addr = Some(GuestAddress(cmd_addr_u32 as usize));
+
         //cmdline.to_bytes_with_nul().len();
         
-        let mut mbinfo: multiboot::multiboot_info = Default::default();
+        let mut mbinfo: multiboot::multiboot_info;
 
-        mbinfo.cmdline = kernel_base_addr + cmd_addr_u32;
+        mbinfo.cmdline = kernel_base_addr as u32 + cmd_addr_u32 as u32;
         
 
 
-
+        */
 
 
 

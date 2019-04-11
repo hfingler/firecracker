@@ -329,7 +329,7 @@ fn bindgen_test_layout_multiboot_elf_section_header_table() {
 }
 pub type multiboot_elf_section_header_table_t = multiboot_elf_section_header_table;
 #[repr(C)]
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone)]
 pub struct multiboot_info {
     pub flags: multiboot_uint32_t,
     pub mem_lower: multiboot_uint32_t,

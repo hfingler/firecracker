@@ -170,6 +170,15 @@ impl std::fmt::Debug for Error {
     }
 }
 
+/// Types of kernels to boot
+#[derive(Debug)]
+pub enum KernelType {
+    /// multiboot compliant kernel
+    Multiboot,
+    /// linux (default)
+    Linux,
+}
+
 /// Types of errors associated with vmm actions.
 #[derive(Debug)]
 pub enum ErrorKind {
@@ -1073,8 +1082,24 @@ impl Vmm {
 
         Ok(())
     }
+  
+    fn get_kernel_type(&mut self) -> std::result::Result<KernelType, StartMicrovmError> {
+        let kernel_config = self
+            .kernel_config
+            .as_mut()
+            .ok_or(StartMicrovmError::MissingKernelConfig)?;
 
-    fn load_kernel(&mut self) -> std::result::Result<GuestAddress, StartMicrovmError> {
+        return match kernel_loader::is_multiboot(&mut kernel_config.kernel_file) {
+            Ok(true)  => Ok(KernelType::Multiboot),
+            _         => Ok(KernelType::Linux),
+        }
+    }
+
+    fn load_multiboot_kernel(&mut self) -> std::result::Result<GuestAddress, StartMicrovmError> {
+        return Ok(GuestAddress(0));
+    }
+
+    fn load_linux_kernel(&mut self) -> std::result::Result<GuestAddress, StartMicrovmError> {
         // This is the easy way out of consuming the value of the kernel_cmdline.
         // TODO: refactor the kernel_cmdline struct in order to have a CString instead of a String.
         let kernel_config = self
@@ -1170,9 +1195,17 @@ impl Vmm {
         self.attach_legacy_devices()
             .map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
 
-        let entry_addr = self
-            .load_kernel()
-            .map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
+        let kernel_type = self
+            .get_kernel_type()
+            .map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;;
+
+        let entry_addr = match kernel_type {
+            KernelType::Multiboot => self.load_multiboot_kernel(),
+            KernelType::Linux     => self.load_linux_kernel(),
+        }.map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
+
+        //let entry_addr = load_kernel()
+        //    .map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
 
         self.register_events()
             .map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
