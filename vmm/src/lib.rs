@@ -994,11 +994,47 @@ impl Vmm {
         Ok(())
     }
 
+    fn create_multiboot_vcpus(
+        &mut self,
+        entry_addr: GuestAddress,
+        request_ts: TimestampUs,
+    ) -> std::result::Result<Vec<Vcpu>, StartMicrovmError> {
+        /*
+        let vcpu_count = self
+            .vm_config
+            .vcpu_count
+            .ok_or(StartMicrovmError::VcpusNotConfigured)?;
+        let mut vcpus = Vec::with_capacity(vcpu_count as usize);
+
+        // `mmio_device_manager` is instantiated in `init_devices()`, which is called before
+        // `start_vcpus()`.
+        let device_manager = self
+            .mmio_device_manager
+            .as_ref()
+            .ok_or(StartMicrovmError::DeviceManager)?;
+
+        for cpu_id in 0..vcpu_count {
+            let io_bus = self.legacy_device_manager.io_bus.clone();
+            let mmio_bus = device_manager.bus.clone();
+            let mut vcpu = Vcpu::new(cpu_id, &self.vm, io_bus, mmio_bus, request_ts.clone())
+                .map_err(StartMicrovmError::Vcpu)?;
+            #[cfg(target_arch = "x86_64")]
+            vcpu.configure(&self.vm_config, entry_addr, &self.vm)
+                .map_err(StartMicrovmError::VcpuConfigure)?;
+            vcpus.push(vcpu);
+        }
+        */
+
+        let mut vcpus = Vec::with_capacity(0);
+        Ok(vcpus)
+    }
+
+
     // On aarch64, the vCPUs need to be created (i.e call KVM_CREATE_VCPU) and configured before
     // setting up the IRQ chip because the `KVM_CREATE_VCPU` ioctl will return error if the IRQCHIP
     // was already initialized.
     // Search for `kvm_arch_vcpu_create` in arch/arm/kvm/arm.c.
-    fn create_vcpus(
+    fn create_linux_vcpus(
         &mut self,
         entry_addr: GuestAddress,
         request_ts: TimestampUs,
@@ -1096,7 +1132,41 @@ impl Vmm {
     }
 
     fn load_multiboot_kernel(&mut self) -> std::result::Result<GuestAddress, StartMicrovmError> {
-        return Ok(GuestAddress(0));
+        let kernel_config = self
+            .kernel_config
+            .as_mut()
+            .ok_or(StartMicrovmError::MissingKernelConfig)?;
+        let cmdline_cstring = CString::new(kernel_config.cmdline.clone()).map_err(|_| {
+            StartMicrovmError::KernelCmdline(kernel_cmdline::Error::InvalidAscii.to_string())
+        })?;
+
+        // It is safe to unwrap because the VM memory was initialized before in vm.memory_init().
+        let vm_memory = self.vm.get_memory().ok_or(StartMicrovmError::GuestMemory(
+            memory_model::GuestMemoryError::MemoryNotInitialized,
+        ))?;
+        let (entry_addr, mbinfo_addr) = kernel_loader::load_multiboot_kernel(
+            vm_memory,
+            &mut kernel_config.kernel_file,
+            arch::HIMEM_START,
+            &cmdline_cstring,
+        )
+        .map_err(StartMicrovmError::KernelLoader)?;
+        
+        // The vcpu_count has a default value. We shouldn't have gotten to this point without
+        // having set the vcpu count.
+        let vcpu_count = self
+            .vm_config
+            .vcpu_count
+            .ok_or(StartMicrovmError::VcpusNotConfigured)?;
+            
+        arch::configure_system(
+            vm_memory,
+            kernel_config.cmdline_addr,
+            cmdline_cstring.to_bytes().len() + 1,
+            vcpu_count,
+        )
+        .map_err(StartMicrovmError::ConfigureSystem)?;
+        Ok(entry_addr)
     }
 
     fn load_linux_kernel(&mut self) -> std::result::Result<GuestAddress, StartMicrovmError> {
@@ -1114,11 +1184,10 @@ impl Vmm {
         let vm_memory = self.vm.get_memory().ok_or(StartMicrovmError::GuestMemory(
             memory_model::GuestMemoryError::MemoryNotInitialized,
         ))?;
-        let (entry_addr, cmd_addr) = kernel_loader::load_kernel(
+        let entry_addr = kernel_loader::load_kernel(
             vm_memory,
             &mut kernel_config.kernel_file,
             arch::HIMEM_START,
-            &cmdline_cstring,
         )
         .map_err(StartMicrovmError::KernelLoader)?;
         
@@ -1204,15 +1273,13 @@ impl Vmm {
             KernelType::Linux     => self.load_linux_kernel(),
         }.map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
 
-        //let entry_addr = load_kernel()
-        //    .map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
-
         self.register_events()
             .map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
 
-        let vcpus = self
-            .create_vcpus(entry_addr, request_ts)
-            .map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
+        let vcpus = match kernel_type {
+            KernelType::Multiboot => self.create_multiboot_vcpus(entry_addr, request_ts),
+            KernelType::Linux     => self.create_linux_vcpus(entry_addr, request_ts),
+        }.map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;
 
         self.start_vcpus(vcpus)
             .map_err(|e| VmmActionError::StartMicrovm(ErrorKind::Internal, e))?;

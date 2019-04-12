@@ -13,18 +13,21 @@ use std::mem;
 use std::fs::File;
 use std::path::Path;
 
-use memory_model::{GuestAddress, GuestMemory};
+use memory_model::{GuestAddress, GuestMemory, DataInit};
 use sys_util;
 
 extern crate byteorder;
-use self::byteorder::{ReadBytesExt, NativeEndian};
+use self::byteorder::{ReadBytesExt, NativeEndian, LittleEndian, BigEndian};
 
 #[allow(non_camel_case_types)]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 // Add here any other architecture that uses as kernel image an ELF file.
 pub mod elf;
 
+#[allow(dead_code)]
 mod multiboot;
+
+unsafe impl DataInit for multiboot::multiboot_mmap_entry {}
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -75,6 +78,9 @@ impl fmt::Display for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// global address so we dont have to seek and find magic twice
+static mut mb_magic_offset: u32 = 0;
+
 /// Checks if a kernel is a multiboot compliant kernel
 ///
 /// # Arguments
@@ -83,7 +89,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 ///
 /// Returns bool.
 /// 
-
 pub fn is_multiboot<F>(
     kernel_image: &mut F
 ) -> Result<bool>
@@ -93,7 +98,7 @@ where
     kernel_image
         .seek(SeekFrom::Start(0))
         .map_err(|_| Error::SeekKernelImage)?;
-    
+
     //mb magic has to be in the first 8192-size of header (=12*u32)
     //but we need to read flags and checksum, so we need 8192/4-12+3
     const BUF_LEN: usize = (multiboot::MULTIBOOT_SEARCH as usize / 4) - 9;
@@ -111,12 +116,24 @@ where
 
             if mb_flags as i32 + mb_check as i32 + multiboot::MULTIBOOT_BOOTLOADER_MAGIC as i32 == 0 {
                 println!("it matches!");
+                println!("found at byte {}", i*4);
+                unsafe { mb_magic_offset = (i*4) as u32; }
+                /*
+                //get multiboot header
+                let mut mhdr: multiboot::multiboot_header = Default::default();
+                kernel_image
+                    .seek(SeekFrom::Start((i*4) as u64))
+                    .map_err(|_| Error::SeekKernelImage)?;
+                unsafe {
+                    // read_struct is safe when reading a POD struct.  It can be used and dropped without issue.
+                    sys_util::read_struct(kernel_image, &mut mhdr).map_err(|_| Error::NotMultibootKernel)?;
+                }
+                println!("mboot header: {:?}", mhdr);
+                */
                 return Ok(true);
-                //return Ok((i*4) as u32);
             }
         }
     }
-
     return Ok(false);
 }  
 
@@ -125,6 +142,146 @@ pub fn page_align_4k(addr: u32) -> u32
     return ((addr + 0x1000 - 1)) & (!(0x1000-1))
     //(((addr) + TARGET_PAGE_SIZE - 1) & TARGET_PAGE_MASK)
 }
+
+/// Loads a multiboot kernel from elf
+///
+/// # Arguments
+///
+/// * `guest_mem` - The guest memory region the kernel is written to.
+/// * `kernel_image` - Input vmlinux image.
+/// * `start_address` - For x86_64, this is the start of the high memory. Kernel should reside above it.
+///
+/// Returns the entry address of the kernel.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub fn load_multiboot_kernel<F>(
+    guest_mem: &GuestMemory,
+    kernel_image: &mut F,
+    start_address: usize,
+    cmdline: &CStr,
+) -> Result<GuestAddress>
+where
+    F: Read + Seek,
+{
+    let mut mb_magic_offset_l : u32 = 0;
+    unsafe { mb_magic_offset_l = mb_magic_offset; }
+
+    //get multiboot header
+    let mut mhdr: multiboot::multiboot_header = Default::default();
+    kernel_image
+        .seek(SeekFrom::Start(mb_magic_offset_l as u64))
+        .map_err(|_| Error::SeekKernelImage)?;
+    unsafe {
+        // read_struct is safe when reading a POD struct.  It can be used and dropped without issue.
+        sys_util::read_struct(kernel_image, &mut mhdr).map_err(|_| Error::NotMultibootKernel)?;
+    }
+    println!("mboot header: {:?}", mhdr);
+
+    let kernel_file_size = kernel_image
+        .seek(SeekFrom::End(0))
+        .map_err(|_| Error::SeekKernelImage)?;
+
+    //offset of kernel start in input file. for rumprun it's jsut the magic offset.
+    let mb_kernel_text_offset : u32 = mb_magic_offset_l - (mhdr.header_addr - mhdr.load_addr);
+    let mut mb_load_size : u32 = 0;
+    let mb_kernel_size : u32;
+
+    if mhdr.header_addr < mhdr.load_addr {
+        panic!("invalid load_addr address");
+    }
+    if mhdr.header_addr - mhdr.load_addr > mb_magic_offset_l {
+        panic!("invalid header_addr address");
+    }
+
+    //true for rumprun
+    if mhdr.load_end_addr != 0 {
+        if mhdr.load_end_addr < mhdr.load_addr {
+            panic!("er1")
+        }
+        //load size is the amount of bytes of text+data sections
+        mb_load_size = mhdr.load_end_addr - mhdr.load_addr;
+    }
+    else {
+        if (kernel_file_size as u32) < mb_kernel_text_offset {
+            panic!("invalid kernel_file_size")
+        }
+        mb_load_size = kernel_file_size as u32 - mb_kernel_text_offset;
+    }
+
+    if mb_load_size > std::u32::MAX - mhdr.load_addr {
+        panic!("kernel does not fit in address space");
+    }
+    //true for rumprun
+    if mhdr.bss_end_addr != 0 {
+        if mhdr.bss_end_addr < (mhdr.load_addr + mb_load_size) {
+            panic!("invalid bss_end_addr address");
+        }
+        //kernel size = text+data+bss
+        mb_kernel_size = mhdr.bss_end_addr - mhdr.load_addr;
+    } else {
+        mb_kernel_size = mb_load_size;
+    }
+
+    //read into guests memory
+    kernel_image
+        .seek(SeekFrom::Start(mb_kernel_text_offset as u64))
+        .map_err(|_| Error::SeekKernelImage)?;
+    //firecracker: for i386, guest memory starts at 0.
+    //load kernel at load_addr in mb header
+    let mem_offset = GuestAddress(mhdr.load_addr as usize);
+    guest_mem.read_to_memory(mem_offset, kernel_image, mb_load_size as usize);
+    
+    //we need to zero bss section
+    let zero_start_addr = GuestAddress((mhdr.load_addr + mb_load_size) as usize);
+    let zeroes_sz = (mb_kernel_size - mb_load_size) as usize; 
+    guest_mem.read_to_memory(zero_start_addr, &mut io::repeat(0), zeroes_sz)
+        .map_err(|_| Error::SeekKernelImage)?; 
+
+    //write cmdline after multiboot area
+    let cmd_addr = GuestAddress(
+        (mhdr.load_addr + mb_kernel_size + mem::size_of::<multiboot::multiboot_info>() as u32 ) as usize
+    );
+    guest_mem
+        .write_slice_at_addr(cmdline.to_bytes_with_nul(), cmd_addr)
+        .map_err(|_| Error::CommandLineCopy)?;
+
+    //now we need to create a multiboot_info struct, write it to memory
+    //and make ebx point to it
+    //TODO: make sure of alignments
+    //let cmd_addr_u32 = page_align_4k(mb_kernel_size);
+    let mbinfo_addr = GuestAddress((mhdr.load_addr + mb_kernel_size) as usize);
+
+    let mut mbinfo: multiboot::multiboot_info;
+    mbinfo.flags = 0 as u32;
+    mbinfo.flags = mbinfo.flags | multiboot::MULTIBOOT_INFO_CMDLINE;
+    mbinfo.cmdline = cmd_addr.offset() as u32;
+    
+    //set up memory
+    mbinfo.flags = mbinfo.flags | multiboot::MULTIBOOT_INFO_MEMORY;
+    mbinfo.flags = mbinfo.flags | multiboot::MULTIBOOT_INFO_MEM_MAP;
+
+    let mut mmap_entry : multiboot::multiboot_mmap_entry ;
+    mmap_entry.size = 0;
+    mmap_entry.addr = 0x10_0000;
+
+    if guest_mem.num_regions() != 1 {
+        panic!("cant handle 2 regions yet")
+    }
+    mmap_entry.len = guest_mem.end_addr().0 as u64;
+    mmap_entry.type_ = multiboot::MULTIBOOT_MEMORY_AVAILABLE;
+
+    let mmap_addr = cmd_addr
+        .checked_add(cmdline.to_bytes().len())
+        .ok_or(Error::CommandLineOverflow)?;
+    guest_mem.write_obj_at_addr(mmap_entry, mmap_addr);
+
+    mbinfo.mmap_addr = mmap_addr.0 as u32;
+    mbinfo.mmap_length = mem::size_of::<multiboot::multiboot_mmap_entry>() as u32;
+    
+    //lets hope this is enough... please
+    Ok((GuestAddress(mhdr.entry_addr), mbinfo_addr) )
+}
+
+
 
 /// Loads a kernel from a vmlinux elf image to a slice
 ///
@@ -139,164 +296,72 @@ pub fn page_align_4k(addr: u32) -> u32
 pub fn load_kernel<F>(
     guest_mem: &GuestMemory,
     kernel_image: &mut F,
-    start_address: usize,
-    cmdline: &CStr,
-) -> Result<(GuestAddress, Option<GuestAddress>)>
+    start_address: usize
+) -> Result<(GuestAddress)>
 where
     F: Read + Seek,
 {
-    //return value: elf entry addr
-    let mut e_entry : usize = 0;
-    let mut cmd_addr = None;
-
-    if let Ok(mb_magic_offset) = is_multiboot(kernel_image) {
-        /*
-        let kernel_file_size = kernel_image
-            .seek(SeekFrom::End(0))
-            //.unwrap()
-            .map_err(|_| Error::SeekKernelImage)?;
-        let mut mhdr: multiboot::multiboot_header = Default::default();
-        kernel_image
-            .seek(SeekFrom::Start(mb_magic_offset as u64))
-            .map_err(|_| Error::SeekKernelImage)?;
-        unsafe {
-            // read_struct is safe when reading a POD struct.  It can be used and dropped without issue.
-            sys_util::read_struct(kernel_image, &mut mhdr).map_err(|_| Error::NotMultibootKernel)?;
-        }
-
-        println!("mboot header: {:?}", mhdr);
-        let mb_kernel_text_offset : u32 = mb_magic_offset - (mhdr.header_addr - mhdr.load_addr);
-        let mut mb_load_size : u32 = 0;
-        let mb_kernel_size : u32;
-
-        if mhdr.header_addr < mhdr.load_addr {
-            panic!("invalid load_addr address");
-        }
-        if mhdr.header_addr - mhdr.load_addr > mb_magic_offset {
-            panic!("invalid header_addr address");
-        }
-
-        if mhdr.load_end_addr != 0{
-            if mhdr.load_end_addr < mhdr.load_addr {
-                panic!("er1")
-            }
-            mb_load_size = mhdr.load_end_addr - mhdr.load_addr;
-        }
-        else {
-            if (kernel_file_size as u32) < mb_kernel_text_offset {
-                panic!("invalid kernel_file_size")
-            }
-            mb_load_size = kernel_file_size as u32 - mb_kernel_text_offset;
-        }
-
-        if mb_load_size > std::u32::MAX - mhdr.load_addr {
-            panic!("kernel does not fit in address space");
-        }
-        if mhdr.bss_end_addr != 0 {
-            if mhdr.bss_end_addr < (mhdr.load_addr + mb_load_size) {
-                panic!("invalid bss_end_addr address");
-            }
-            mb_kernel_size = mhdr.bss_end_addr - mhdr.load_addr;
-        } else {
-            mb_kernel_size = mb_load_size;
-        }
-
-        //read into guests memory
-        kernel_image
-            .seek(SeekFrom::Start(mb_kernel_text_offset as u64))
-            .map_err(|_| Error::SeekKernelImage)?;        
-        //for i386, guest memory starts at 0.
-        let kernel_base_addr = 0;
-        let mem_offset = GuestAddress(kernel_base_addr);
-        guest_mem.read_to_memory(mem_offset, kernel_image, mb_load_size as usize);
-        
-        let mut zeroes = File::open(Path::new("/dev/zero")).map_err(|_| Error::SeekKernelImage)?; 
-        let zero_start_addr = GuestAddress(mb_load_size as usize);
-        let zeroes_sz = (mb_kernel_size - mb_load_size) as usize; 
-        guest_mem.read_to_memory(zero_start_addr, &mut zeroes, zeroes_sz)
-            .map_err(|_| Error::SeekKernelImage)?; 
-
-        let cmd_addr_u32 = page_align_4k(mb_kernel_size);
-        cmd_addr = Some(GuestAddress(cmd_addr_u32 as usize));
-
-        //cmdline.to_bytes_with_nul().len();
-        
-        let mut mbinfo: multiboot::multiboot_info;
-
-        mbinfo.cmdline = kernel_base_addr as u32 + cmd_addr_u32 as u32;
-        
-
-
-        */
-
-
-
-    }
-    else {
-        let mut ehdr: elf::Elf64_Ehdr = Default::default();
-        kernel_image
-            .seek(SeekFrom::Start(0))
-            .map_err(|_| Error::SeekKernelImage)?;
-        unsafe {
-            // read_struct is safe when reading a POD struct.  It can be used and dropped without issue.
-            sys_util::read_struct(kernel_image, &mut ehdr).map_err(|_| Error::ReadElfHeader)?;
-        }
-
-        // Sanity checks
-        if ehdr.e_ident[elf::EI_MAG0 as usize] != elf::ELFMAG0 as u8
-            || ehdr.e_ident[elf::EI_MAG1 as usize] != elf::ELFMAG1
-            || ehdr.e_ident[elf::EI_MAG2 as usize] != elf::ELFMAG2
-            || ehdr.e_ident[elf::EI_MAG3 as usize] != elf::ELFMAG3
-        {
-            return Err(Error::InvalidElfMagicNumber);
-        }
-        if ehdr.e_ident[elf::EI_DATA as usize] != elf::ELFDATA2LSB as u8 {
-            return Err(Error::BigEndianElfOnLittle);
-        }
-        if ehdr.e_phentsize as usize != mem::size_of::<elf::Elf64_Phdr>() {
-            return Err(Error::InvalidProgramHeaderSize);
-        }
-        if (ehdr.e_phoff as usize) < mem::size_of::<elf::Elf64_Ehdr>() {
-            // If the program header is backwards, bail.
-            return Err(Error::InvalidProgramHeaderOffset);
-        }
-        if (ehdr.e_entry as usize) < start_address {
-            return Err(Error::InvalidEntryAddress);
-        }
-
-        kernel_image
-            .seek(SeekFrom::Start(ehdr.e_phoff))
-            .map_err(|_| Error::SeekProgramHeader)?;
-        let phdrs: Vec<elf::Elf64_Phdr> = unsafe {
-            // Reading the structs is safe for a slice of POD structs.
-            sys_util::read_struct_slice(kernel_image, ehdr.e_phnum as usize)
-                .map_err(|_| Error::ReadProgramHeader)?
-        };
-
-        // Read in each section pointed to by the program headers.
-        for phdr in &phdrs {
-            if (phdr.p_type & elf::PT_LOAD) == 0 || phdr.p_filesz == 0 {
-                continue;
-            }
-
-            kernel_image
-                .seek(SeekFrom::Start(phdr.p_offset))
-                .map_err(|_| Error::SeekKernelStart)?;
-
-            let mem_offset = GuestAddress(phdr.p_paddr as usize);
-            if mem_offset.offset() < start_address {
-                return Err(Error::InvalidProgramHeaderAddress);
-            }
-
-            guest_mem
-                .read_to_memory(mem_offset, kernel_image, phdr.p_filesz as usize)
-                .map_err(|_| Error::ReadKernelImage)?;
-        }
-
-        e_entry = ehdr.e_entry as usize;
+    let mut ehdr: elf::Elf64_Ehdr = Default::default();
+    kernel_image
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| Error::SeekKernelImage)?;
+    unsafe {
+        // read_struct is safe when reading a POD struct.  It can be used and dropped without issue.
+        sys_util::read_struct(kernel_image, &mut ehdr).map_err(|_| Error::ReadElfHeader)?;
     }
 
-    Ok((GuestAddress(e_entry), cmd_addr))
+    // Sanity checks
+    if ehdr.e_ident[elf::EI_MAG0 as usize] != elf::ELFMAG0 as u8
+        || ehdr.e_ident[elf::EI_MAG1 as usize] != elf::ELFMAG1
+        || ehdr.e_ident[elf::EI_MAG2 as usize] != elf::ELFMAG2
+        || ehdr.e_ident[elf::EI_MAG3 as usize] != elf::ELFMAG3
+    {
+        return Err(Error::InvalidElfMagicNumber);
+    }
+    if ehdr.e_ident[elf::EI_DATA as usize] != elf::ELFDATA2LSB as u8 {
+        return Err(Error::BigEndianElfOnLittle);
+    }
+    if ehdr.e_phentsize as usize != mem::size_of::<elf::Elf64_Phdr>() {
+        return Err(Error::InvalidProgramHeaderSize);
+    }
+    if (ehdr.e_phoff as usize) < mem::size_of::<elf::Elf64_Ehdr>() {
+        // If the program header is backwards, bail.
+        return Err(Error::InvalidProgramHeaderOffset);
+    }
+    if (ehdr.e_entry as usize) < start_address {
+        return Err(Error::InvalidEntryAddress);
+    }
+
+    kernel_image
+        .seek(SeekFrom::Start(ehdr.e_phoff))
+        .map_err(|_| Error::SeekProgramHeader)?;
+    let phdrs: Vec<elf::Elf64_Phdr> = unsafe {
+        // Reading the structs is safe for a slice of POD structs.
+        sys_util::read_struct_slice(kernel_image, ehdr.e_phnum as usize)
+            .map_err(|_| Error::ReadProgramHeader)?
+    };
+
+    // Read in each section pointed to by the program headers.
+    for phdr in &phdrs {
+        if (phdr.p_type & elf::PT_LOAD) == 0 || phdr.p_filesz == 0 {
+            continue;
+        }
+
+        kernel_image
+            .seek(SeekFrom::Start(phdr.p_offset))
+            .map_err(|_| Error::SeekKernelStart)?;
+
+        let mem_offset = GuestAddress(phdr.p_paddr as usize);
+        if mem_offset.offset() < start_address {
+            return Err(Error::InvalidProgramHeaderAddress);
+        }
+
+        guest_mem
+            .read_to_memory(mem_offset, kernel_image, phdr.p_filesz as usize)
+            .map_err(|_| Error::ReadKernelImage)?;
+    }
+    
+    Ok(GuestAddress(ehdr.e_entry as usize))
 }
 
 #[cfg(target_arch = "aarch64")]
