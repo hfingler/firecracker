@@ -112,6 +112,32 @@ pub fn setup_regs(vcpu: &VcpuFd, boot_ip: u64) -> Result<()> {
     vcpu.set_regs(&regs).map_err(Error::SetBaseRegisters)
 }
 
+/// Configure base registers for a given CPU.
+///
+/// # Arguments
+///
+/// * `vcpu` - Structure for the VCPU that holds the VCPU's fd.
+/// * `boot_ip` - Starting instruction pointer.
+pub fn setup_regs_multiboot(vcpu: &VcpuFd, boot_ip: u64, mbinfo_addr: &GuestAddress) -> Result<()> {
+    let regs: kvm_regs = kvm_regs {
+        rflags: 0x0000_0000_0000_0002u64,
+        rip: boot_ip,
+        rax: 0x2BADB002 as u64,
+        rbx: mbinfo_addr.0 as u64,
+        // Frame pointer. It gets a snapshot of the stack pointer (rsp) so that when adjustments are
+        // made to rsp (i.e. reserving space for local variables or pushing values on to the stack),
+        // local variables and function parameters are still accessible from a constant offset from rbp.
+        rsp: super::layout::BOOT_STACK_POINTER as u64,
+        // Starting stack pointer.
+        rbp: super::layout::BOOT_STACK_POINTER as u64,
+        // Must point to zero page address per Linux ABI. This is x86_64 specific.
+        rsi: super::layout::ZERO_PAGE_START as u64,
+        ..Default::default()
+    };
+
+    vcpu.set_regs(&regs).map_err(Error::SetBaseRegisters)
+}
+
 /// Configures the segment registers and system page tables for a given CPU.
 ///
 /// # Arguments

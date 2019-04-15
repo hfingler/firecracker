@@ -8,7 +8,7 @@
 use std;
 use std::ffi::CStr;
 use std::fmt;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, repeat};
 use std::mem;
 use std::fs::File;
 use std::path::Path;
@@ -158,7 +158,7 @@ pub fn load_multiboot_kernel<F>(
     kernel_image: &mut F,
     start_address: usize,
     cmdline: &CStr,
-) -> Result<GuestAddress>
+) -> Result<(GuestAddress, GuestAddress)>
 where
     F: Read + Seek,
 {
@@ -233,7 +233,7 @@ where
     //we need to zero bss section
     let zero_start_addr = GuestAddress((mhdr.load_addr + mb_load_size) as usize);
     let zeroes_sz = (mb_kernel_size - mb_load_size) as usize; 
-    guest_mem.read_to_memory(zero_start_addr, &mut io::repeat(0), zeroes_sz)
+    guest_mem.read_to_memory(zero_start_addr, &mut std::io::repeat(0), zeroes_sz)
         .map_err(|_| Error::SeekKernelImage)?; 
 
     //write cmdline after multiboot area
@@ -250,7 +250,7 @@ where
     //let cmd_addr_u32 = page_align_4k(mb_kernel_size);
     let mbinfo_addr = GuestAddress((mhdr.load_addr + mb_kernel_size) as usize);
 
-    let mut mbinfo: multiboot::multiboot_info;
+    let mut mbinfo: multiboot::multiboot_info = unsafe { mem::zeroed() };
     mbinfo.flags = 0 as u32;
     mbinfo.flags = mbinfo.flags | multiboot::MULTIBOOT_INFO_CMDLINE;
     mbinfo.cmdline = cmd_addr.offset() as u32;
@@ -259,7 +259,7 @@ where
     mbinfo.flags = mbinfo.flags | multiboot::MULTIBOOT_INFO_MEMORY;
     mbinfo.flags = mbinfo.flags | multiboot::MULTIBOOT_INFO_MEM_MAP;
 
-    let mut mmap_entry : multiboot::multiboot_mmap_entry ;
+    let mut mmap_entry : multiboot::multiboot_mmap_entry = unsafe { mem::zeroed() };
     mmap_entry.size = 0;
     mmap_entry.addr = 0x10_0000;
 
@@ -278,7 +278,7 @@ where
     mbinfo.mmap_length = mem::size_of::<multiboot::multiboot_mmap_entry>() as u32;
     
     //lets hope this is enough... please
-    Ok((GuestAddress(mhdr.entry_addr), mbinfo_addr) )
+    Ok((GuestAddress(mhdr.entry_addr as usize), mbinfo_addr) )
 }
 
 

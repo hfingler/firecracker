@@ -179,6 +179,10 @@ pub enum KernelType {
     Linux,
 }
 
+/// Types of kernels to boot
+static mut multiboot_mbi_addr: GuestAddress = GuestAddress(0);
+
+
 /// Types of errors associated with vmm actions.
 #[derive(Debug)]
 pub enum ErrorKind {
@@ -999,7 +1003,6 @@ impl Vmm {
         entry_addr: GuestAddress,
         request_ts: TimestampUs,
     ) -> std::result::Result<Vec<Vcpu>, StartMicrovmError> {
-        /*
         let vcpu_count = self
             .vm_config
             .vcpu_count
@@ -1019,13 +1022,13 @@ impl Vmm {
             let mut vcpu = Vcpu::new(cpu_id, &self.vm, io_bus, mmio_bus, request_ts.clone())
                 .map_err(StartMicrovmError::Vcpu)?;
             #[cfg(target_arch = "x86_64")]
-            vcpu.configure(&self.vm_config, entry_addr, &self.vm)
-                .map_err(StartMicrovmError::VcpuConfigure)?;
+            unsafe {
+                vcpu.configure_multiboot(&self.vm_config, entry_addr, &self.vm, &multiboot_mbi_addr)
+                    .map_err(StartMicrovmError::VcpuConfigure)?;
+            }
             vcpus.push(vcpu);
         }
-        */
 
-        let mut vcpus = Vec::with_capacity(0);
         Ok(vcpus)
     }
 
@@ -1152,6 +1155,9 @@ impl Vmm {
         )
         .map_err(StartMicrovmError::KernelLoader)?;
         
+        unsafe {
+            multiboot_mbi_addr = mbinfo_addr;
+        }
         // The vcpu_count has a default value. We shouldn't have gotten to this point without
         // having set the vcpu count.
         let vcpu_count = self

@@ -278,6 +278,59 @@ impl Vcpu {
         Ok(())
     }
 
+    #[cfg(target_arch = "x86_64")]
+    /// Configures a x86_64 specific vcpu and should be called once per vcpu from the vcpu's thread.
+    ///
+    /// # Arguments
+    ///
+    /// * `machine_config` - Specifies necessary info used for the CPUID configuration.
+    /// * `kernel_start_addr` - Offset from `guest_mem` at which the kernel starts.
+    /// * `vm` - The virtual machine this vcpu will get attached to.
+    pub fn configure_multiboot(
+        &mut self,
+        machine_config: &VmConfig,
+        kernel_start_addr: GuestAddress,
+        vm: &Vm,
+        mbinfo_addr: &GuestAddress
+    ) -> Result<()> {
+        // the MachineConfiguration has defaults for ht_enabled and vcpu_count hence it is safe to unwrap
+        filter_cpuid(
+            self.id,
+            machine_config
+                .vcpu_count
+                .ok_or(Error::VcpuCountNotInitialized)?,
+            machine_config.ht_enabled.ok_or(Error::HTNotInitialized)?,
+            &mut self.cpuid,
+        )
+        .map_err(Error::CpuId)?;
+
+        if let Some(template) = machine_config.cpu_template {
+            match template {
+                CpuFeaturesTemplate::T2 => t2::set_cpuid_entries(self.cpuid.mut_entries_slice()),
+                CpuFeaturesTemplate::C3 => c3::set_cpuid_entries(self.cpuid.mut_entries_slice()),
+            }
+        }
+
+        self.fd
+            .set_cpuid2(&self.cpuid)
+            .map_err(Error::SetSupportedCpusFailed)?;
+
+        arch::x86_64::regs::setup_msrs(&self.fd).map_err(Error::MSRSConfiguration)?;
+        // Safe to unwrap because this method is called after the VM is configured
+        let vm_memory = vm
+            .get_memory()
+            .ok_or(Error::GuestMemory(GuestMemoryError::MemoryNotInitialized))?;
+        unsafe {
+            arch::x86_64::regs::setup_regs_multiboot(&self.fd, kernel_start_addr.offset() as u64, mbinfo_addr)
+                .map_err(Error::REGSConfiguration)?;
+        }
+        arch::x86_64::regs::setup_fpu(&self.fd).map_err(Error::FPUConfiguration)?;
+        arch::x86_64::regs::setup_sregs(vm_memory, &self.fd).map_err(Error::SREGSConfiguration)?;
+        arch::x86_64::interrupts::set_lint(&self.fd).map_err(Error::LocalIntConfiguration)?;
+        Ok(())
+    }
+
+
     fn run_emulation(&mut self) -> Result<()> {
         match self.fd.run() {
             Ok(run) => match run {
