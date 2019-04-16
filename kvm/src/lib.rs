@@ -836,10 +836,14 @@ impl VcpuFd {
     /// Triggers the running of the current virtual CPU returning an exit reason.
     ///
     pub fn run(&self) -> Result<VcpuExit> {
+        println!("run loop");
         // Safe because we know that our file is a VCPU fd and we verify the return result.
         let ret = unsafe { ioctl(self, KVM_RUN()) };
         if ret == 0 {
             let run = self.kvm_run_ptr.as_mut_ref();
+            println!("vmexit, reason {}", run.exit_reason);
+            println!("regs: {:?}", self.get_regs());
+            println!("ip dif:  {:#X}", self.get_regs().unwrap().rip - 1064960);
             match run.exit_reason {
                 // make sure you treat all possible exit reasons from include/uapi/linux/kvm.h corresponding
                 // when upgrading to a different kernel version

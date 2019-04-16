@@ -95,22 +95,40 @@ pub fn is_multiboot<F>(
 where
     F: Read + Seek,
 {
+    let kernel_file_size = kernel_image
+        .seek(SeekFrom::End(0))
+        .map_err(|_| Error::SeekKernelImage)?;
+
+    println!("size: {}", kernel_file_size);
+
     kernel_image
         .seek(SeekFrom::Start(0))
         .map_err(|_| Error::SeekKernelImage)?;
 
     //mb magic has to be in the first 8192-size of header (=12*u32)
     //but we need to read flags and checksum, so we need 8192/4-12+3
+    
     const BUF_LEN: usize = (multiboot::MULTIBOOT_SEARCH as usize / 4) - 9;
     let mut buf: [u32; BUF_LEN] = [0; BUF_LEN];
+    
+    //let buf_sz = std::cmp::max(kernel_file_size as usize, BUF_LEN);
+    //let mut buf = Vec::with_capacity(buf_sz);
+
 
     //read MB_HEADER_U32_SZ u32 from elf
-    kernel_image.read_u32_into::<NativeEndian>(&mut buf).unwrap();
+    match kernel_image.read_u32_into::<NativeEndian>(&mut buf) {
+        Err(err) => panic!("kernel_image read u32: {}", err),
+        _ => println!("all good"),
+    }
+    
+    println!("Read u32s, scanning for magic");
+    //.unwrap();
 
     for (i, l) in buf.iter().enumerate() {
         if *l == multiboot::MULTIBOOT_BOOTLOADER_MAGIC {
             let mb_flags = buf[i+1];
             let mb_check = buf[i+2];
+            println!("found at byte {}", i*4);
             println!("found at byte {}", i*4);
             println!("flags: {:#X}  check:  {:#X}", mb_flags, mb_check);
 
@@ -134,6 +152,8 @@ where
             }
         }
     }
+
+    println!("not multiboot");
     return Ok(false);
 }  
 

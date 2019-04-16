@@ -99,7 +99,7 @@ fn main() {
                         ",
                 )
                 .takes_value(true)
-                .default_value("2")
+                .default_value("0")
                 .possible_values(&["0", "1", "2"]),
         )
         .arg(

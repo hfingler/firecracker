@@ -135,6 +135,8 @@ pub fn setup_regs_multiboot(vcpu: &VcpuFd, boot_ip: u64, mbinfo_addr: &GuestAddr
         ..Default::default()
     };
 
+    println!("set mboot regs: {:?}", regs);
+
     vcpu.set_regs(&regs).map_err(Error::SetBaseRegisters)
 }
 
