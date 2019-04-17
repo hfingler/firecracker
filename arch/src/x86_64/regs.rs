@@ -159,9 +159,6 @@ const BOOT_GDT_OFFSET: usize = 0x500;
 //hfn: changed this from 20 to 40
 const BOOT_IDT_OFFSET: usize = 0x540;
 
-//hfn: from 4 to 6
-const BOOT_GDT_MAX: usize = 6;
-
 const EFER_LMA: u64 = 0x400;
 const EFER_LME: u64 = 0x100;
 
@@ -195,8 +192,12 @@ fn write_idt_value(val: u64, guest_mem: &GuestMemory) -> Result<()> {
         .map_err(|_| Error::WriteIDT)
 }
 
+//hfn: from 4 to 6
+const BOOT_GDT_MAX: usize = 4;
+
 //hfn: all different here
 fn configure_segments_and_sregs(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
+    /*
     let gdt_table: [u64; BOOT_GDT_MAX as usize] = [
         gdt_entry(0, 0, 0),            // NULL
         gdt_entry(0xaf9b, 0, 0xfffff), // CODE   CS
@@ -204,28 +205,34 @@ fn configure_segments_and_sregs(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Res
         gdt_entry(0xcf93, 0, 0xfffff), // DS
         gdt_entry(0, 0, 0),            // TSS
         gdt_entry(0, 0, 0),            // TSS 2
-    /* from locore.S
-    .quad 0x0000000000000000
-	.quad 0x00af9b000000ffff	/* 64bit CS		*/
-	.quad 0x00cf9b000000ffff	/* 32bit CS		*/
-	.quad 0x00cf93000000ffff	/* DS			*/
-	.quad 0x0000000000000000	/* TSS part 1 (via C)	*/
-	.quad 0x0000000000000000	/* TSS part 2 (via C)	*/
-    */
-        
-    /*
-        //well shit, lets see what happens
-        gdt_entry(0, 0, 0),            // NULL
-        gdt_entry(0xa09b, 0, 0xfffff), // CODE
-        gdt_entry(0xc093, 0, 0xfffff), // DATA
-        gdt_entry(0x808b, 0, 0xfffff), // TSS
-    */
-    ];
+    
+    // from locore.S
+    //.quad 0x0000000000000000
+	//.quad 0x00af9b000000ffff	/* 64bit CS		*/
+	//.quad 0x00cf9b000000ffff	/* 32bit CS		*/
+	//.quad 0x00cf93000000ffff	/* DS			*/
+	//.quad 0x0000000000000000	/* TSS part 1 (via C)	*/
+	//.quad 0x0000000000000000	/* TSS part 2 (via C)	*/
 
     //changed this too
     let code_seg = kvm_segment_from_gdt(gdt_table[1], 1);
     let data_seg = kvm_segment_from_gdt(gdt_table[2], 3);
     let tss_seg = kvm_segment_from_gdt(gdt_table[3], 4);
+    
+    */
+
+
+    let gdt_table: [u64; BOOT_GDT_MAX as usize] = [
+        gdt_entry(0, 0, 0),            // NULL
+        gdt_entry(0xa09b, 0, 0xfffff), // CODE
+        gdt_entry(0xc093, 0, 0xfffff), // DATA
+        gdt_entry(0x808b, 0, 0xfffff), // TSS
+    ];
+
+    //changed this too
+    let code_seg = kvm_segment_from_gdt(gdt_table[1], 1);
+    let data_seg = kvm_segment_from_gdt(gdt_table[2], 2);
+    let tss_seg = kvm_segment_from_gdt(gdt_table[3], 3);
 
     // Write segments
     write_gdt_table(&gdt_table[..], mem)?;
