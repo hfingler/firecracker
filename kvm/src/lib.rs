@@ -843,7 +843,7 @@ impl VcpuFd {
             let run = self.kvm_run_ptr.as_mut_ref();
             println!("vmexit, reason {}", run.exit_reason);
             println!("regs: {:?}", self.get_regs());
-            println!("ip dif:  {:#X}", self.get_regs().rip - 1059931);
+            println!("ip dif:  {:#X}", self.get_regs().unwrap().rip - 1059931);
             match run.exit_reason {
                 // make sure you treat all possible exit reasons from include/uapi/linux/kvm.h corresponding
                 // when upgrading to a different kernel version

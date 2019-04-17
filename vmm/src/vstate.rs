@@ -320,10 +320,10 @@ impl Vcpu {
         let vm_memory = vm
             .get_memory()
             .ok_or(Error::GuestMemory(GuestMemoryError::MemoryNotInitialized))?;
-        unsafe {
-            arch::x86_64::regs::setup_regs_multiboot(&self.fd, kernel_start_addr.offset() as u64, mbinfo_addr)
-                .map_err(Error::REGSConfiguration)?;
-        }
+        
+        arch::x86_64::regs::setup_regs_multiboot(&self.fd, kernel_start_addr.offset() as u64, mbinfo_addr)
+            .map_err(Error::REGSConfiguration)?;
+        
         arch::x86_64::regs::setup_fpu(&self.fd).map_err(Error::FPUConfiguration)?;
         arch::x86_64::regs::setup_sregs(vm_memory, &self.fd).map_err(Error::SREGSConfiguration)?;
         arch::x86_64::interrupts::set_lint(&self.fd).map_err(Error::LocalIntConfiguration)?;

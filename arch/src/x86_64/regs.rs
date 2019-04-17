@@ -15,8 +15,8 @@ use memory_model::{GuestAddress, GuestMemory};
 
 // Initial pagetables.
 const PML4_START: usize = 0x9000;
-const PDPTE_START: usize = 0xa000;
-const PDE_START: usize = 0xb000;
+//const PDPTE_START: usize = 0xa000;
+//const PDE_START: usize = 0xb000;
 
 #[derive(Debug)]
 pub enum Error {
@@ -257,18 +257,18 @@ fn setup_page_tables(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
     //this writes 512*8
     for i in 0..512 {
         mem.write_obj_at_addr(
-            0x1000*i as u64 + 0x3u64,
+            (0x1000*i) as u64 + 0x3u64,
             pt0.unchecked_add((i * 8) as usize),
         )
         .map_err(|_| Error::WritePDEAddress)?;
     }
     
     let pd0 = pt0.unchecked_add(512*8);
-    mem.write_obj_at_addr(pt0.0 as u64 + 0x3u64, pd0)
+    mem.write_obj_at_addr(pt0.offset() as u64 + 0x3u64, pd0)
         .map_err(|_| Error::WritePDEAddress)?;
     for i in 1..512 {
         mem.write_obj_at_addr(
-            0x200000*i as u64 + 0x3u64 + 0x80u64,
+            (0x200000*i) as u64 + 0x3u64 + 0x80u64,
             pd0.unchecked_add((i * 8) as usize),
         )
         .map_err(|_| Error::WritePDEAddress)?;
@@ -277,7 +277,7 @@ fn setup_page_tables(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
     let pd1 = pd0.unchecked_add(512*8);
     for i in 0..512 {
         mem.write_obj_at_addr(
-            0x40000000 + 0x200000*i as u64 + 0x3u64 + 0x80u64,
+            0x40000000 + (0x200000*i) as u64 + 0x3u64 + 0x80u64,
             pd1.unchecked_add((i * 8) as usize),
         )
         .map_err(|_| Error::WritePDEAddress)?;
@@ -286,7 +286,7 @@ fn setup_page_tables(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
     let pd2 = pd1.unchecked_add(512*8);
     for i in 0..512 {
         mem.write_obj_at_addr(
-            0x80000000 + 0x200000*i as u64 + 0x3u64 + 0x80u64,
+            0x80000000 + (0x200000*i) as u64 + 0x3u64 + 0x80u64,
             pd2.unchecked_add((i * 8) as usize),
         )
         .map_err(|_| Error::WritePDEAddress)?;
@@ -295,33 +295,32 @@ fn setup_page_tables(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
     let pd3 = pd2.unchecked_add(512*8);
     for i in 0..512 {
         mem.write_obj_at_addr(
-            0xc0000000 + 0x200000*i as u64 + 0x3u64 + 0x80u64,
+            0xc0000000 + (0x200000*i) as u64 + 0x3u64 + 0x80u64,
             pd3.unchecked_add((i * 8) as usize),
         )
         .map_err(|_| Error::WritePDEAddress)?;
     }
 
     //wrote 5*512*8 to far
-
     let pdpt = pd3.unchecked_add(512*8);
 
     mem.write_obj_at_addr(
-        pd0.0 as u64 + 0x3u64, 
+        pd0.offset() as u64 + 0x3u64, 
         pdpt
     ).map_err(|_| Error::WritePDEAddress)?;
 
     mem.write_obj_at_addr(
-        pd1.0 as u64 + 0x3u64, 
+        pd1.offset() as u64 + 0x3u64, 
         pdpt.unchecked_add(8 as usize),
     ).map_err(|_| Error::WritePDEAddress)?;
 
     mem.write_obj_at_addr(
-        pd2.0 as u64 + 0x3u64, 
+        pd2.offset() as u64 + 0x3u64, 
         pdpt.unchecked_add(16 as usize),
     ).map_err(|_| Error::WritePDEAddress)?;
 
     mem.write_obj_at_addr(
-        pd3.0 as u64 + 0x3u64, 
+        pd3.offset() as u64 + 0x3u64, 
         pdpt.unchecked_add(24 as usize),
     ).map_err(|_| Error::WritePDEAddress)?;
 
@@ -335,7 +334,7 @@ fn setup_page_tables(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
 
     let pml4 = pdpt.unchecked_add(512*8);
 
-    mem.write_obj_at_addr(pdpt.0 as u64 + 0x3u64, pml4)
+    mem.write_obj_at_addr(pdpt.offset() as u64 + 0x3u64, pml4)
         .map_err(|_| Error::WritePDEAddress)?;
     
     for i in 1..512 {

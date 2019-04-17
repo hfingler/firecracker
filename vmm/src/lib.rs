@@ -180,8 +180,7 @@ pub enum KernelType {
 }
 
 /// Types of kernels to boot
-static mut multiboot_mbi_addr: GuestAddress = GuestAddress(0);
-
+static mut MULTIBOOT_MBI_ADDR: GuestAddress = GuestAddress(0);
 
 /// Types of errors associated with vmm actions.
 #[derive(Debug)]
@@ -1023,7 +1022,7 @@ impl Vmm {
                 .map_err(StartMicrovmError::Vcpu)?;
             #[cfg(target_arch = "x86_64")]
             unsafe {
-                vcpu.configure_multiboot(&self.vm_config, entry_addr, &self.vm, &multiboot_mbi_addr)
+                vcpu.configure_multiboot(&self.vm_config, entry_addr, &self.vm, &MULTIBOOT_MBI_ADDR)
                     .map_err(StartMicrovmError::VcpuConfigure)?;
             }
             vcpus.push(vcpu);
@@ -1156,7 +1155,7 @@ impl Vmm {
         .map_err(StartMicrovmError::KernelLoader)?;
         
         unsafe {
-            multiboot_mbi_addr = mbinfo_addr;
+            MULTIBOOT_MBI_ADDR = mbinfo_addr;
         }
         // The vcpu_count has a default value. We shouldn't have gotten to this point without
         // having set the vcpu count.
