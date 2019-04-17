@@ -123,7 +123,7 @@ pub fn setup_regs_multiboot(vcpu: &VcpuFd, boot_ip: u64, mbinfo_addr: &GuestAddr
         rflags: 0x0000_0000_0000_0002u64,
         rip: boot_ip,
         rax: 0x2BADB002 as u64,
-        rbx: mbinfo_addr.0 as u64,
+        rbx: mbinfo_addr.offset() as u64,
         // Frame pointer. It gets a snapshot of the stack pointer (rsp) so that when adjustments are
         // made to rsp (i.e. reserving space for local variables or pushing values on to the stack),
         // local variables and function parameters are still accessible from a constant offset from rbp.

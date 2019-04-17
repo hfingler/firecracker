@@ -1163,7 +1163,7 @@ impl Vmm {
             .vm_config
             .vcpu_count
             .ok_or(StartMicrovmError::VcpusNotConfigured)?;
-            
+        /*
         arch::configure_system(
             vm_memory,
             kernel_config.cmdline_addr,
@@ -1171,6 +1171,8 @@ impl Vmm {
             vcpu_count,
         )
         .map_err(StartMicrovmError::ConfigureSystem)?;
+        */
+        
         Ok(entry_addr)
     }
 
