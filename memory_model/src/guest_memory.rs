@@ -277,6 +277,7 @@ impl GuestMemory {
     /// # }
     /// ```
     pub fn write_obj_at_addr<T: DataInit>(&self, val: T, guest_addr: GuestAddress) -> Result<()> {
+        println!("write_obj_at_addr {:#X} - {:#X}", guest_addr.0, guest_addr.0+mem::size_of::<T>());
         self.do_in_region(guest_addr, mem::size_of::<T>(), move |mapping, offset| {
             mapping
                 .write_obj(val, offset)
@@ -319,6 +320,7 @@ impl GuestMemory {
     where
         F: Read,
     {
+        println!("read_to_memory {:#X} - {:#X}", guest_addr.0, guest_addr.0+count);
         self.do_in_region(guest_addr, count, move |mapping, offset| {
             mapping
                 .read_to_memory(offset, src, count)

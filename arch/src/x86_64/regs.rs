@@ -156,9 +156,11 @@ pub fn setup_sregs(mem: &GuestMemory, vcpu: &VcpuFd) -> Result<()> {
 }
 
 const BOOT_GDT_OFFSET: usize = 0x500;
-const BOOT_IDT_OFFSET: usize = 0x520;
+//hfn: changed this from 20 to 40
+const BOOT_IDT_OFFSET: usize = 0x540;
 
-const BOOT_GDT_MAX: usize = 4;
+//hfn: from 4 to 6
+const BOOT_GDT_MAX: usize = 6;
 
 const EFER_LMA: u64 = 0x400;
 const EFER_LME: u64 = 0x100;
@@ -166,6 +168,12 @@ const EFER_LME: u64 = 0x100;
 const X86_CR0_PE: u64 = 0x1;
 const X86_CR0_PG: u64 = 0x8000_0000;
 const X86_CR4_PAE: u64 = 0x20;
+
+//hfn: this new
+const X86_CR0_WP: u64     = 0x0001_0000;
+const X86_CR4_OSXMEM: u64 = 0x0000_0400;
+const X86_CR4_OSFXSR: u64 = 0x0000_0200;
+
 
 fn write_gdt_table(table: &[u64], guest_mem: &GuestMemory) -> Result<()> {
     let boot_gdt_addr = GuestAddress(BOOT_GDT_OFFSET);
@@ -187,17 +195,37 @@ fn write_idt_value(val: u64, guest_mem: &GuestMemory) -> Result<()> {
         .map_err(|_| Error::WriteIDT)
 }
 
+//hfn: all different here
 fn configure_segments_and_sregs(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
     let gdt_table: [u64; BOOT_GDT_MAX as usize] = [
+        gdt_entry(0, 0, 0),            // NULL
+        gdt_entry(0xaf9b, 0, 0xfffff), // CODE   CS
+        gdt_entry(0xcf9b, 0, 0xfffff), // 32 bit CS
+        gdt_entry(0xcf93, 0, 0xfffff), // DS
+        gdt_entry(0, 0, 0),            // TSS
+        gdt_entry(0, 0, 0),            // TSS 2
+    /* from locore.S
+    .quad 0x0000000000000000
+	.quad 0x00af9b000000ffff	/* 64bit CS		*/
+	.quad 0x00cf9b000000ffff	/* 32bit CS		*/
+	.quad 0x00cf93000000ffff	/* DS			*/
+	.quad 0x0000000000000000	/* TSS part 1 (via C)	*/
+	.quad 0x0000000000000000	/* TSS part 2 (via C)	*/
+    */
+        
+    /*
+        //well shit, lets see what happens
         gdt_entry(0, 0, 0),            // NULL
         gdt_entry(0xa09b, 0, 0xfffff), // CODE
         gdt_entry(0xc093, 0, 0xfffff), // DATA
         gdt_entry(0x808b, 0, 0xfffff), // TSS
+    */
     ];
 
+    //changed this too
     let code_seg = kvm_segment_from_gdt(gdt_table[1], 1);
-    let data_seg = kvm_segment_from_gdt(gdt_table[2], 2);
-    let tss_seg = kvm_segment_from_gdt(gdt_table[3], 3);
+    let data_seg = kvm_segment_from_gdt(gdt_table[2], 3);
+    let tss_seg = kvm_segment_from_gdt(gdt_table[3], 4);
 
     // Write segments
     write_gdt_table(&gdt_table[..], mem)?;
@@ -224,6 +252,106 @@ fn configure_segments_and_sregs(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Res
 }
 
 fn setup_page_tables(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
+    let pt0 = GuestAddress(PML4_START);
+
+    //this writes 512*8
+    for i in 0..512 {
+        mem.write_obj_at_addr(
+            0x1000*i as u64 + 0x3u64,
+            pt0.unchecked_add((i * 8) as usize),
+        )
+        .map_err(|_| Error::WritePDEAddress)?;
+    }
+    
+    let pd0 = pt0.unchecked_add(512*8);
+    mem.write_obj_at_addr(pt0.0 as u64 + 0x3u64, pd0)
+        .map_err(|_| Error::WritePDEAddress)?;
+    for i in 1..512 {
+        mem.write_obj_at_addr(
+            0x200000*i as u64 + 0x3u64 + 0x80u64,
+            pd0.unchecked_add((i * 8) as usize),
+        )
+        .map_err(|_| Error::WritePDEAddress)?;
+    }
+
+    let pd1 = pd0.unchecked_add(512*8);
+    for i in 0..512 {
+        mem.write_obj_at_addr(
+            0x40000000 + 0x200000*i as u64 + 0x3u64 + 0x80u64,
+            pd1.unchecked_add((i * 8) as usize),
+        )
+        .map_err(|_| Error::WritePDEAddress)?;
+    }
+
+    let pd2 = pd1.unchecked_add(512*8);
+    for i in 0..512 {
+        mem.write_obj_at_addr(
+            0x80000000 + 0x200000*i as u64 + 0x3u64 + 0x80u64,
+            pd2.unchecked_add((i * 8) as usize),
+        )
+        .map_err(|_| Error::WritePDEAddress)?;
+    }
+
+    let pd3 = pd2.unchecked_add(512*8);
+    for i in 0..512 {
+        mem.write_obj_at_addr(
+            0xc0000000 + 0x200000*i as u64 + 0x3u64 + 0x80u64,
+            pd3.unchecked_add((i * 8) as usize),
+        )
+        .map_err(|_| Error::WritePDEAddress)?;
+    }
+
+    //wrote 5*512*8 to far
+
+    let pdpt = pd3.unchecked_add(512*8);
+
+    mem.write_obj_at_addr(
+        pd0.0 as u64 + 0x3u64, 
+        pdpt
+    ).map_err(|_| Error::WritePDEAddress)?;
+
+    mem.write_obj_at_addr(
+        pd1.0 as u64 + 0x3u64, 
+        pdpt.unchecked_add(8 as usize),
+    ).map_err(|_| Error::WritePDEAddress)?;
+
+    mem.write_obj_at_addr(
+        pd2.0 as u64 + 0x3u64, 
+        pdpt.unchecked_add(16 as usize),
+    ).map_err(|_| Error::WritePDEAddress)?;
+
+    mem.write_obj_at_addr(
+        pd3.0 as u64 + 0x3u64, 
+        pdpt.unchecked_add(24 as usize),
+    ).map_err(|_| Error::WritePDEAddress)?;
+
+    for i in 4..512 {
+        mem.write_obj_at_addr(
+            0x0 as u64,
+            pdpt.unchecked_add((i * 8) as usize),
+        )
+        .map_err(|_| Error::WritePDEAddress)?;
+    }
+
+    let pml4 = pdpt.unchecked_add(512*8);
+
+    mem.write_obj_at_addr(pdpt.0 as u64 + 0x3u64, pml4)
+        .map_err(|_| Error::WritePDEAddress)?;
+    
+    for i in 1..512 {
+        mem.write_obj_at_addr(
+            0x0 as u64,
+            pml4.unchecked_add((i * 8) as usize),
+        )
+        .map_err(|_| Error::WritePDEAddress)?;
+    }
+
+    sregs.cr3 = pml4.offset() as u64;
+    sregs.cr4 |= X86_CR4_PAE | X86_CR4_OSXMEM | X86_CR4_OSFXSR;
+    sregs.cr0 |= X86_CR0_PG | X86_CR0_WP;
+    Ok(())
+
+    /*
     // Puts PML4 right after zero page but aligned to 4k.
     let boot_pml4_addr = GuestAddress(PML4_START);
     let boot_pdpte_addr = GuestAddress(PDPTE_START);
@@ -245,11 +373,12 @@ fn setup_page_tables(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
         )
         .map_err(|_| Error::WritePDEAddress)?;
     }
-
+    
     sregs.cr3 = boot_pml4_addr.offset() as u64;
-    sregs.cr4 |= X86_CR4_PAE;
-    sregs.cr0 |= X86_CR0_PG;
+    sregs.cr4 |= X86_CR4_PAE | X86_CR4_OSXMEM | X86_CR4_OSFXSR;
+    sregs.cr0 |= X86_CR0_PG | X86_CR0_WP;
     Ok(())
+    */
 }
 
 fn create_msr_entries() -> Vec<kvm_msr_entry> {
