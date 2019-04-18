@@ -215,8 +215,8 @@ fn configure_segments_and_sregs(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Res
 
     //changed this too
     let code_seg = kvm_segment_from_gdt(gdt_table[1], 1);
-    let data_seg = kvm_segment_from_gdt(gdt_table[2], 3);
-    let tss_seg = kvm_segment_from_gdt(gdt_table[3], 4);
+    let data_seg = kvm_segment_from_gdt(gdt_table[3], 3);
+    let tss_seg = kvm_segment_from_gdt(gdt_table[4], 4);
     
 /*
     let gdt_table: [u64; BOOT_GDT_MAX as usize] = [
