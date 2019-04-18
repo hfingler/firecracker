@@ -850,6 +850,9 @@ impl VcpuFd {
                 KVM_EXIT_UNKNOWN => Ok(VcpuExit::Unknown),
                 KVM_EXIT_EXCEPTION => Ok(VcpuExit::Exception),
                 KVM_EXIT_IO => {
+
+                    loop { }
+
                     println!("in EXIT_IO");
                     let run_start = run as *mut kvm_run as *mut u8;
                     // Safe because the exit_reason (which comes from the kernel) told us which
