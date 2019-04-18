@@ -861,7 +861,7 @@ impl VcpuFd {
                     // The slice's lifetime is limited to the lifetime of this Vcpu, which is equal
                     // to the mmap of the kvm_run struct that this is slicing from
 
-                    println!("port {:#X}  content {:?}   len  {}", data_ptr, run, data_size);
+                    println!("port {:?}   len  {}", data_ptr,  data_size);
 
                     let data_slice = unsafe {
                         std::slice::from_raw_parts_mut::<u8>(data_ptr as *mut u8, data_size)
