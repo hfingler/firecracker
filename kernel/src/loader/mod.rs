@@ -268,8 +268,6 @@ where
     //and make ebx point to it
     //TODO: make sure of alignments
     //let cmd_addr_u32 = page_align_4k(mb_kernel_size);
-    let mbinfo_addr = GuestAddress((mhdr.load_addr + mb_kernel_size) as usize);
-
     let mut mbinfo: multiboot::multiboot_info = unsafe { mem::zeroed() };
     mbinfo.flags = 0 as u32;
     mbinfo.flags = mbinfo.flags | multiboot::MULTIBOOT_INFO_CMDLINE;
@@ -294,10 +292,12 @@ where
         .ok_or(Error::CommandLineOverflow)?;
     guest_mem.write_obj_at_addr(mmap_entry, mmap_addr);
 
-    mbinfo.mmap_addr = mmap_addr.0 as u32;
+    mbinfo.mmap_addr = mmap_addr.offset() as u32;
     mbinfo.mmap_length = mem::size_of::<multiboot::multiboot_mmap_entry>() as u32;
     
-    //lets hope this is enough... please
+    let mbinfo_addr = GuestAddress((mhdr.load_addr + mb_kernel_size) as usize);
+    guest_mem.write_obj_at_addr(mbinfo, mbinfo_addr);
+
     Ok((GuestAddress(mhdr.entry_addr as usize), mbinfo_addr) )
 }
 
