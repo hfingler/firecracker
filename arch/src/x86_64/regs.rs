@@ -193,7 +193,7 @@ fn write_idt_value(val: u64, guest_mem: &GuestMemory) -> Result<()> {
 }
 
 //hfn: from 4 to 6
-const BOOT_GDT_MAX: usize = 6;
+const BOOT_GDT_MAX: usize = 4;
 
 //hfn: all different here
 fn configure_segments_and_sregs(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
