@@ -28,6 +28,7 @@ pub mod elf;
 mod multiboot;
 
 unsafe impl DataInit for multiboot::multiboot_mmap_entry {}
+unsafe impl DataInit for multiboot::multiboot_info {}
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
