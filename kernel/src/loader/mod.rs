@@ -257,6 +257,9 @@ where
     guest_mem.read_to_memory(zero_start_addr, &mut std::io::repeat(0), zeroes_sz)
         .map_err(|_| Error::SeekKernelImage)?; 
 
+    println!("total kernel {} KB text+data: {} KB  bss {} KB", mb_kernel_size/1024, mb_load_size/1024, zeroes_sz/1024);
+
+
     //write cmdline after multiboot area
     let cmd_addr = GuestAddress(
         (mhdr.load_addr + mb_kernel_size + mem::size_of::<multiboot::multiboot_info>() as u32 ) as usize
