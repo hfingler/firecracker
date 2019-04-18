@@ -1241,7 +1241,6 @@ impl Vmm {
 
     fn start_microvm(&mut self) -> std::result::Result<VmmData, VmmActionError> {
         info!("VMM received instance start command");
-        println!("start_microvm");
         if self.is_instance_initialized() {
             return Err(VmmActionError::StartMicrovm(
                 ErrorKind::User,

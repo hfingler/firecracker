@@ -122,20 +122,16 @@ where
         _ => println!("all good"),
     }
     
-    println!("Read u32s, scanning for magic");
-    //.unwrap();
+    //println!("Read u32s, scanning for magic");
 
     for (i, l) in buf.iter().enumerate() {
         if *l == multiboot::MULTIBOOT_BOOTLOADER_MAGIC {
             let mb_flags = buf[i+1];
             let mb_check = buf[i+2];
-            println!("found at byte {}", i*4);
-            println!("found at byte {}", i*4);
-            println!("flags: {:#X}  check:  {:#X}", mb_flags, mb_check);
+            //println!("flags: {:#X}  check:  {:#X}", mb_flags, mb_check);
 
             if mb_flags as i32 + mb_check as i32 + multiboot::MULTIBOOT_BOOTLOADER_MAGIC as i32 == 0 {
-                println!("it matches!");
-                println!("found at byte {}", i*4);
+                //println!("found at byte {}", i*4);
                 unsafe { mb_magic_offset = (i*4) as u32; }
                 /*
                 //get multiboot header
@@ -157,12 +153,6 @@ where
     println!("not multiboot");
     return Ok(false);
 }  
-
-pub fn page_align_4k(addr: u32) -> u32
-{
-    return ((addr + 0x1000 - 1)) & (!(0x1000-1))
-    //(((addr) + TARGET_PAGE_SIZE - 1) & TARGET_PAGE_MASK)
-}
 
 /// Loads a multiboot kernel from elf
 ///
