@@ -843,34 +843,25 @@ impl VcpuFd {
             let run = self.kvm_run_ptr.as_mut_ref();
             println!("vmexit, reason {}", run.exit_reason);
             println!("regs: {:?}", self.get_regs());
-            println!("ip dif:  {:#X}", self.get_regs().unwrap().rip - 1059931);
             match run.exit_reason {
                 // make sure you treat all possible exit reasons from include/uapi/linux/kvm.h corresponding
                 // when upgrading to a different kernel version
                 KVM_EXIT_UNKNOWN => Ok(VcpuExit::Unknown),
                 KVM_EXIT_EXCEPTION => Ok(VcpuExit::Exception),
                 KVM_EXIT_IO => {
-
-                    loop { }
-
-                    println!("in EXIT_IO");
                     let run_start = run as *mut kvm_run as *mut u8;
                     // Safe because the exit_reason (which comes from the kernel) told us which
                     // union field to use.
-                    println!("got kvm run struct");
                     let io = unsafe { run.__bindgen_anon_1.io };
-                    println!("got io struct: {:?}", io);
                     let port = io.port;
-                    println!("port: {}", port);
                     let data_size = io.count as usize * io.size as usize;
-                    println!("data_size: {}", data_size);
                     // The data_offset is defined by the kernel to be some number of bytes into the
                     // kvm_run stucture, which we have fully mmap'd.
                     let data_ptr = unsafe { run_start.offset(io.data_offset as isize) };
                     // The slice's lifetime is limited to the lifetime of this Vcpu, which is equal
                     // to the mmap of the kvm_run struct that this is slicing from
 
-                    println!("ptr {:?}  content {:?}   len  {}", data_ptr, run_start, data_size);
+                    println!("port {:#X}  content {:?}   len  {}", data_ptr, run, data_size);
 
                     let data_slice = unsafe {
                         std::slice::from_raw_parts_mut::<u8>(data_ptr as *mut u8, data_size)

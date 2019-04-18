@@ -227,6 +227,7 @@ impl BusDevice for Serial {
     }
 
     fn write(&mut self, offset: u64, data: &[u8]) {
+        println!("SERIAL write, does nothing..");
         if data.len() != 1 {
             METRICS.uart.missed_write_count.inc();
             return;
