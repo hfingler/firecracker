@@ -160,6 +160,7 @@ impl Serial {
     }
 
     fn handle_write(&mut self, offset: u8, v: u8) -> io::Result<()> {
+        println!("in HANDLE_WRITE.  offset: {:?},  value {:?}", offset, v)
         match offset as u8 {
             DLAB_LOW if self.is_dlab_set() => {
                 self.baud_divisor = (self.baud_divisor & 0xff00) | u16::from(v)
@@ -227,7 +228,6 @@ impl BusDevice for Serial {
     }
 
     fn write(&mut self, offset: u64, data: &[u8]) {
-        println!("SERIAL write, does nothing..");
         if data.len() != 1 {
             METRICS.uart.missed_write_count.inc();
             return;
