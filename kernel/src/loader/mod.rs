@@ -286,7 +286,7 @@ where
     if guest_mem.num_regions() != 1 {
         panic!("cant handle 2 regions yet")
     }
-    mmap_entry.len = guest_mem.end_addr().0 as u64;
+    mmap_entry.len = guest_mem.end_addr().offset() as u64 - 0x10_0000;
     mmap_entry.type_ = multiboot::MULTIBOOT_MEMORY_AVAILABLE;
 
     let mmap_addr = cmd_addr

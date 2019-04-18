@@ -193,35 +193,32 @@ fn write_idt_value(val: u64, guest_mem: &GuestMemory) -> Result<()> {
 }
 
 //hfn: from 4 to 6
-const BOOT_GDT_MAX: usize = 4;
+const BOOT_GDT_MAX: usize = 6;
 
 //hfn: all different here
 fn configure_segments_and_sregs(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Result<()> {
-    /*
-    let gdt_table: [u64; BOOT_GDT_MAX as usize] = [
-        gdt_entry(0, 0, 0),            // NULL
-        gdt_entry(0xaf9b, 0, 0xfffff), // CODE   CS
-        gdt_entry(0xcf9b, 0, 0xfffff), // 32 bit CS
-        gdt_entry(0xcf93, 0, 0xfffff), // DS
-        gdt_entry(0, 0, 0),            // TSS
-        gdt_entry(0, 0, 0),            // TSS 2
     
-    // from locore.S
-    //.quad 0x0000000000000000
-	//.quad 0x00af9b000000ffff	/* 64bit CS		*/
-	//.quad 0x00cf9b000000ffff	/* 32bit CS		*/
-	//.quad 0x00cf93000000ffff	/* DS			*/
-	//.quad 0x0000000000000000	/* TSS part 1 (via C)	*/
-	//.quad 0x0000000000000000	/* TSS part 2 (via C)	*/
+    let gdt_table: [u64; BOOT_GDT_MAX as usize] = [
+        0x0000000000000000,
+	    0x00af9b000000ffff,	/* 64bit CS		*/
+	    0x00cf9b000000ffff,	/* 32bit CS		*/
+	    0x00cf93000000ffff,	/* DS			*/
+	    0x0000000000000000,	/* TSS part 1 (via C)	*/
+	    0x0000000000000000,	/* TSS part 2 (via C)	*/
+    ];
+        //gdt_entry(0, 0, 0),            // NULL
+        //gdt_entry(0xaf9b, 0, 0xffff), // CODE   CS
+        //gdt_entry(0xcf9b, 0, 0xffff), // 32 bit CS
+        //gdt_entry(0xcf93, 0, 0xffff), // DS
+        //gdt_entry(0, 0, 0),            // TSS
+        //gdt_entry(0, 0, 0),            // TSS 2
 
     //changed this too
     let code_seg = kvm_segment_from_gdt(gdt_table[1], 1);
     let data_seg = kvm_segment_from_gdt(gdt_table[2], 3);
     let tss_seg = kvm_segment_from_gdt(gdt_table[3], 4);
     
-    */
-
-
+/*
     let gdt_table: [u64; BOOT_GDT_MAX as usize] = [
         gdt_entry(0, 0, 0),            // NULL
         gdt_entry(0xa09b, 0, 0xfffff), // CODE
@@ -233,6 +230,7 @@ fn configure_segments_and_sregs(mem: &GuestMemory, sregs: &mut kvm_sregs) -> Res
     let code_seg = kvm_segment_from_gdt(gdt_table[1], 1);
     let data_seg = kvm_segment_from_gdt(gdt_table[2], 2);
     let tss_seg = kvm_segment_from_gdt(gdt_table[3], 3);
+*/
 
     // Write segments
     write_gdt_table(&gdt_table[..], mem)?;
