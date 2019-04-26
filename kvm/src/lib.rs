@@ -18,7 +18,12 @@ extern crate sys_util;
 mod cap;
 mod ioctl_defs;
 
-use core::arch::x86;
+//for measuring vmexit
+extern crate core;
+use core::arch::x86_64;
+
+static mut CT: u32 = 0;
+static mut arr: [u64;100] = [0; 100];
 
 use std::fs::File;
 use std::io;
@@ -852,12 +857,28 @@ impl VcpuFd {
                 KVM_EXIT_EXCEPTION => Ok(VcpuExit::Exception),
                 KVM_EXIT_IO => {
                     
-                    let mut rd: i64 = 0;
                     unsafe {
-                        rd = x86::_rdtsc();
+                        CT += 1;
+                        // after setup
+                        if CT > 6 && CT <= 106 {
+                            let mut rd: u64 = 0;
+                            let mut rd2: u32 = 0 ;
+                            
+                            rd = x86_64::__rdtscp(&mut rd2);
+                            
+                            arr[(CT-6) as usize] = rd;
+
+                            if CT == 106 {
+                                for x in arr.iter() {
+                                    println!("{}", x);
+                                }   
+                            }
+
+                            return Ok(VcpuExit::Debug);
+                        }
                     }
 
-                    println!("time:  {}", rd);
+
 
                     let run_start = run as *mut kvm_run as *mut u8;
                     // Safe because the exit_reason (which comes from the kernel) told us which

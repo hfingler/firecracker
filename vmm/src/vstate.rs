@@ -381,6 +381,9 @@ impl Vcpu {
                     error!("Received KVM_EXIT_INTERNAL_ERROR signal");
                     Err(Error::VcpuUnhandledKvmExit)
                 }
+                VcpuExit::Debug => {
+                    Ok(())
+                }
                 r => {
                     METRICS.vcpu.failures.inc();
                     // TODO: Are we sure we want to finish running a vcpu upon
