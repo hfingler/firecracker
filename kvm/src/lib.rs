@@ -18,6 +18,8 @@ extern crate sys_util;
 mod cap;
 mod ioctl_defs;
 
+use core::arch::x86;
+
 use std::fs::File;
 use std::io;
 use std::mem::size_of;
@@ -849,6 +851,14 @@ impl VcpuFd {
                 KVM_EXIT_UNKNOWN => Ok(VcpuExit::Unknown),
                 KVM_EXIT_EXCEPTION => Ok(VcpuExit::Exception),
                 KVM_EXIT_IO => {
+                    
+                    let mut rd: i64 = 0;
+                    unsafe {
+                        rd = x86::_rdtsc();
+                    }
+
+                    println!("time:  {}", rd);
+
                     let run_start = run as *mut kvm_run as *mut u8;
                     // Safe because the exit_reason (which comes from the kernel) told us which
                     // union field to use.
