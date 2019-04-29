@@ -19,12 +19,12 @@ mod cap;
 mod ioctl_defs;
 
 //for measuring vmexit
+/*
 extern crate core;
 use core::arch::x86_64;
-
 static mut CT: u32 = 0;
 static mut arr: [u64;100] = [0; 100];
-
+*/
 use std::fs::File;
 use std::io;
 use std::mem::size_of;
@@ -856,7 +856,8 @@ impl VcpuFd {
                 KVM_EXIT_UNKNOWN => Ok(VcpuExit::Unknown),
                 KVM_EXIT_EXCEPTION => Ok(VcpuExit::Exception),
                 KVM_EXIT_IO => {
-                    
+                    //for measuring IO vmexit 
+                    /*
                     unsafe {
                         CT += 1;
                         // after setup
@@ -877,7 +878,7 @@ impl VcpuFd {
                             return Ok(VcpuExit::Debug);
                         }
                     }
-
+                    */
 
 
                     let run_start = run as *mut kvm_run as *mut u8;
